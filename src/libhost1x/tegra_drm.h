@@ -1,195 +1,462 @@
 /*
  * Copyright (c) 2012-2013, NVIDIA CORPORATION.  All rights reserved.
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the "Software"),
+ * to deal in the Software without restriction, including without limitation
+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
+ * and/or sell copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following conditions:
  *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+ * THE COPYRIGHT HOLDER(S) OR AUTHOR(S) BE LIABLE FOR ANY CLAIM, DAMAGES OR
+ * OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ * ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ * OTHER DEALINGS IN THE SOFTWARE.
  */
 
 #ifndef _TEGRA_DRM_H_
 #define _TEGRA_DRM_H_
 
-#include <libdrm/drm.h>
+#include "drm.h"
 
-#define DRM_TEGRA_GEM_CREATE_TILED     (1 << 0)
-#define DRM_TEGRA_GEM_CREATE_BOTTOM_UP (1 << 1)
+#if defined(__cplusplus)
+extern "C" {
+#endif
 
+#define DRM_TEGRA_GEM_CONTIGUOUS	(1 << 0)
+#define DRM_TEGRA_GEM_FLAGS		(DRM_TEGRA_GEM_CONTIGUOUS)
+
+/**
+ * struct drm_tegra_gem_create - parameters for the GEM object creation IOCTL
+ */
 struct drm_tegra_gem_create {
+	/**
+	 * @size:
+	 *
+	 * The size, in bytes, of the buffer object to be created.
+	 */
 	__u64 size;
+
+	/**
+	 * @flags:
+	 *
+	 * A bitmask of flags that influence the creation of GEM objects:
+	 *
+	 * DRM_TEGRA_GEM_CONTIGUOUS - The buffer is to be backed by physically
+	 *	contiguous memory.
+	 */
 	__u32 flags;
+
+	/**
+	 * @handle:
+	 *
+	 * Return location for the handle of the created GEM object.
+	 */
 	__u32 handle;
 };
 
+/**
+ * struct drm_tegra_gem_mmap - parameters for the GEM mmap IOCTL
+ */
 struct drm_tegra_gem_mmap {
+	/**
+	 * @handle:
+	 *
+	 * Handle of the GEM object to obtain an mmap offset for.
+	 */
 	__u32 handle;
+
+	/**
+	 * @pad:
+	 *
+	 * Structure padding that may be used in the future. Must be 0.
+	 */
 	__u32 pad;
+
+	/**
+	 * @offset:
+	 *
+	 * Return location for the mmap offset for the given GEM object.
+	 */
 	__u64 offset;
 };
 
-struct drm_tegra_syncpt_read {
-	__u32 id;
-	__u32 value;
-};
-
-struct drm_tegra_syncpt_incr {
-	__u32 id;
-	__u32 pad;
-};
-
-struct drm_tegra_syncpt_wait {
-	__u32 id;
-	__u32 thresh;
-	__u32 timeout;
-	__u32 value;
-};
-
-#define DRM_TEGRA_NO_TIMEOUT	(0xffffffff)
+#define DRM_TEGRA_CHANNEL_FLAGS (0)
 
 struct drm_tegra_open_channel {
+	/**
+	 * @client:
+	 *
+	 * The client ID for this channel.
+	 */
 	__u32 client;
-	__u32 pad;
+
+	/**
+	 * @flags:
+	 *
+	 * A bitmask of flags that influence the channel creation. Currently
+	 * no flags are defined, so this must be 0.
+	 */
+	__u32 flags;
+
+	/**
+	 * @syncpts:
+	 *
+	 * Return location for the number of syncpoints used by this channel.
+	 */
+	__u32 syncpts;
+
+	/**
+	 * @version:
+	 *
+	 * Return location for the implementation version of this channel.
+	 */
+	__u32 version;
+
+	/**
+	 * @context:
+	 *
+	 * Return location for the application context of this channel. This
+	 * context needs to be passed to the DRM_TEGRA_CHANNEL_CLOSE or the
+	 * DRM_TEGRA_SUBMIT IOCTLs.
+	 */
 	__u64 context;
+
+	/**
+	 * @reserved:
+	 *
+	 * This field is reserved for future use. Must be 0.
+	 */
+	__u64 reserved;
 };
 
 struct drm_tegra_close_channel {
+	/**
+	 * @context:
+	 *
+	 * The application context of this channel. This is obtained from the
+	 * DRM_TEGRA_OPEN_CHANNEL IOCTL.
+	 */
 	__u64 context;
 };
 
-struct drm_tegra_get_syncpt {
-	__u64 context;
-	__u32 index;
-	__u32 id;
-};
+#define DRM_TEGRA_BUFFER_FLAGS	(0)
 
-struct drm_tegra_get_syncpt_base {
-	__u64 context;
-	__u32 syncpt;
-	__u32 id;
-};
-
-struct drm_tegra_syncpt {
-	__u32 id;
-	__u32 incrs;
-};
-
-struct drm_tegra_cmdbuf {
+struct drm_tegra_buffer {
+	/**
+	 * @handle:
+	 *
+	 * Handle of the buffer.
+	 */
 	__u32 handle;
-	__u32 offset;
-	__u32 words;
-	__u32 pad;
+
+	/**
+	 * @flags:
+	 *
+	 * A bitmask of flags specifying the usage of the buffer. Currently no
+	 * flags are defined, so this must be 0.
+	 */
+	__u32 flags;
 };
 
+#define DRM_TEGRA_FENCE_WAIT	(1 << 0)
+#define DRM_TEGRA_FENCE_EMIT	(1 << 1)
+#define DRM_TEGRA_FENCE_FD	(1 << 2)
+#define DRM_TEGRA_FENCE_FLAGS	(DRM_TEGRA_FENCE_WAIT | \
+				 DRM_TEGRA_FENCE_EMIT | \
+				 DRM_TEGRA_FENCE_FD)
+
+struct drm_tegra_fence {
+	/**
+	 * @handle:
+	 *
+	 * Handle (syncobj) or file descriptor (sync FD) of the fence. It is
+	 * interpreted based on the DRM_TEGRA_FENCE_FD flag (see below).
+	 */
+	__u32 handle;
+
+	/**
+	 * @flags:
+	 *
+	 * A bitmask of flags that specify this fence.
+	 *
+	 * DRM_TEGRA_FENCE_WAIT - Wait for this fence before the new command
+	 *	buffer is submitted.
+	 * DRM_TEGRA_FENCE_EMIT - Emit this fence when the command buffer is
+	 *	done being processed.
+	 * DRM_TEGRA_FENCE_FD - This fence is a sync FD. If not specified, a
+	 *	syncobj will be used.
+	 */
+	__u32 flags;
+
+	/**
+	 * @offset:
+	 *
+	 * Offset in the command stream for this fence. This is used to patch
+	 * the command stream with the resolved syncpoint ID.
+	 */
+	__u32 offset;
+
+	/**
+	 * @index:
+	 *
+	 * Syncpoint to use for this fence. This is an index into the list of
+	 * syncpoints of the channel. It will be resolved to a real syncpoint
+	 * ID upon job submission.
+	 */
+	__u32 index;
+
+	/**
+	 * @value:
+	 *
+	 * Number of times to increment the syncpoint.
+	 */
+	__u32 value;
+
+	/**
+	 * @reserved:
+	 *
+	 * This field is reserved for future use. Must be 0.
+	 */
+	__u32 reserved[3];
+};
+
+#define DRM_TEGRA_CMDBUF_FLAGS	(0)
+
+/**
+ * struct drm_tegra_cmdbuf - structure describing a command buffer
+ */
+struct drm_tegra_cmdbuf {
+	/**
+	 * @index:
+	 *
+	 * Index into the job's buffer handle list, pointing to the handle of
+	 * the GEM object that contains this command buffer.
+	 */
+	__u32 index;
+
+	/**
+	 * @offset:
+	 *
+	 * Offset, in bytes, into the GEM object at which the command buffer
+	 * starts. Needs to be a multiple of 4.
+	 */
+	__u32 offset;
+
+	/**
+	 * @words:
+	 *
+	 * Number of 32-bit words in this command buffer.
+	 */
+	__u32 words;
+
+	/**
+	 * @flags:
+	 *
+	 * A bitmask of flags that influence the processing of this command
+	 * buffer. Currently no flags are defined, so this must be 0.
+	 */
+	__u32 flags;
+
+	/**
+	 * @pad:
+	 *
+	 * Structure padding that may be used in the future. Must be 0.
+	 */
+	__u32 pad;
+
+	/**
+	 * @num_fences:
+	 *
+	 * The number of fences attached to this command buffer.
+	 */
+	__u32 num_fences;
+
+	/**
+	 * @fences:
+	 *
+	 * Pointer to an array of @num_fences &struct drm_tegra_fence objects.
+	 */
+	__u64 fences;
+};
+
+#define DRM_TEGRA_RELOC_FLAGS	(0)
+
+/**
+ * struct drm_tegra_reloc - GEM object relocation structure
+ */
 struct drm_tegra_reloc {
 	struct {
-		__u32 handle;
+		/**
+		 * @cmdbuf.index:
+		 *
+		 * Index into the job's buffer handle list pointing to the
+		 * handle of the GEM object containing the command buffer for
+		 * which to perform this GEM object relocation.
+		 */
+		__u32 index;
+
+		/**
+		 * @cmdbuf.offset:
+		 *
+		 * Offset into the command buffer at which to insert the the
+		 * relocated address.
+		 */
 		__u32 offset;
 	} cmdbuf;
+
 	struct {
-		__u32 handle;
+		/**
+		 * @target.index:
+		 *
+		 * Index into the job's buffer handle list pointing to the
+		 * handle of the GEM object to be relocated.
+		 */
+		__u32 index;
+
+		/**
+		 * @target.offset:
+		 *
+		 * Offset into the target GEM object at which the relocated
+		 * data starts.
+		 */
 		__u32 offset;
 	} target;
+
+	/**
+	 * @shift:
+	 *
+	 * The number of bits by which to shift relocated addresses.
+	 */
 	__u32 shift;
-	__u32 pad;
+
+	/**
+	 * @flags:
+	 *
+	 * A bitmask of flags that determine how the GEM object should be
+	 * relocated.
+	 */
+	__u32 flags;
+
+	/**
+	 * @reserved:
+	 *
+	 * This field is reserved for future use. Must be 0.
+	 */
+	__u64 reserved;
 };
 
-struct drm_tegra_waitchk {
-	__u32 handle;
-	__u32 offset;
-	__u32 syncpt;
-	__u32 thresh;
-};
+#define DRM_TEGRA_SUBMIT_FLAGS	(0)
 
+/**
+ * struct drm_tegra_submit - job submission structure
+ */
 struct drm_tegra_submit {
+	/**
+	 * @context:
+	 *
+	 * The application context identifying the channel to use for the
+	 * execution of this job.
+	 */
 	__u64 context;
-	__u32 num_syncpts;
+
+	/**
+	 * @num_buffers:
+	 *
+	 * The number of GEM objects used during the execution of this job.
+	 */
+	__u32 num_buffers;
+
+	/**
+	 * @num_cmdbufs:
+	 *
+	 * The number of command buffers to execute as part of this job.
+	 */
 	__u32 num_cmdbufs;
+
+	/**
+	 * @num_relocs:
+	 *
+	 * The number of relocations to perform before executing this job.
+	 */
 	__u32 num_relocs;
-	__u32 num_waitchks;
-	__u32 waitchk_mask;
+
+	/**
+	 * @timeout:
+	 *
+	 * The maximum amount of time, in milliseconds, to allow for the
+	 * execution of this job.
+	 */
 	__u32 timeout;
-	__u64 syncpts;
+
+	/**
+	 * @buffers:
+	 *
+	 * A pointer to @num_buffers &struct drm_tegra_buffer structures that
+	 * specify the GEM objects used during the execution of this job.
+	 */
+	__u64 buffers;
+
+	/**
+	 * @cmdbufs:
+	 *
+	 * A pointer to @num_cmdbufs &struct drm_tegra_cmdbuf structures that
+	 * define the command buffers to execute as part of this job.
+	 */
 	__u64 cmdbufs;
+
+	/**
+	 * @relocs:
+	 *
+	 * A pointer to @num_relocs &struct drm_tegra_reloc structures that
+	 * specify the relocations that need to be performed before executing
+	 * this job.
+	 */
 	__u64 relocs;
-	__u64 waitchks;
-	__u32 fence;		/* Return value */
 
-	__u32 reserved[5];	/* future expansion */
-};
-
-#define DRM_TEGRA_GEM_TILING_MODE_PITCH 0
-#define DRM_TEGRA_GEM_TILING_MODE_TILED 1
-#define DRM_TEGRA_GEM_TILING_MODE_BLOCK 2
-
-struct drm_tegra_gem_set_tiling {
-	/* input */
-	__u32 handle;
-	__u32 mode;
-	__u32 value;
-	__u32 pad;
-};
-
-struct drm_tegra_gem_get_tiling {
-	/* input */
-	__u32 handle;
-	/* output */
-	__u32 mode;
-	__u32 value;
-	__u32 pad;
-};
-
-#define DRM_TEGRA_GEM_BOTTOM_UP		(1 << 0)
-#define DRM_TEGRA_GEM_FLAGS		(DRM_TEGRA_GEM_BOTTOM_UP)
-
-struct drm_tegra_gem_set_flags {
-	/* input */
-	__u32 handle;
-	/* output */
+	/**
+	 * @flags:
+	 *
+	 * A bitmask of flags that specify how to execute this job. Currently
+	 * no flags are defined, so this must be 0.
+	 */
 	__u32 flags;
-};
 
-struct drm_tegra_gem_get_flags {
-	/* input */
-	__u32 handle;
-	/* output */
-	__u32 flags;
+	/**
+	 * @pad:
+	 *
+	 * Structure padding that may be used in the future. Must be 0.
+	 */
+	__u32 pad;
+
+	/**
+	 * @reserved:
+	 *
+	 * This field is reserved for future use. Must be 0.
+	 */
+	__u64 reserved[9]; /* future expansion */
 };
 
 #define DRM_TEGRA_GEM_CREATE		0x00
 #define DRM_TEGRA_GEM_MMAP		0x01
-#define DRM_TEGRA_SYNCPT_READ		0x02
-#define DRM_TEGRA_SYNCPT_INCR		0x03
-#define DRM_TEGRA_SYNCPT_WAIT		0x04
-#define DRM_TEGRA_OPEN_CHANNEL		0x05
-#define DRM_TEGRA_CLOSE_CHANNEL		0x06
-#define DRM_TEGRA_GET_SYNCPT		0x07
-#define DRM_TEGRA_SUBMIT		0x08
-#define DRM_TEGRA_GET_SYNCPT_BASE	0x09
-#define DRM_TEGRA_GEM_SET_TILING	0x0a
-#define DRM_TEGRA_GEM_GET_TILING	0x0b
-#define DRM_TEGRA_GEM_SET_FLAGS		0x0c
-#define DRM_TEGRA_GEM_GET_FLAGS		0x0d
+#define DRM_TEGRA_OPEN_CHANNEL		0x02
+#define DRM_TEGRA_CLOSE_CHANNEL		0x03
+#define DRM_TEGRA_SUBMIT		0x04
 
 #define DRM_IOCTL_TEGRA_GEM_CREATE DRM_IOWR(DRM_COMMAND_BASE + DRM_TEGRA_GEM_CREATE, struct drm_tegra_gem_create)
 #define DRM_IOCTL_TEGRA_GEM_MMAP DRM_IOWR(DRM_COMMAND_BASE + DRM_TEGRA_GEM_MMAP, struct drm_tegra_gem_mmap)
-#define DRM_IOCTL_TEGRA_SYNCPT_READ DRM_IOWR(DRM_COMMAND_BASE + DRM_TEGRA_SYNCPT_READ, struct drm_tegra_syncpt_read)
-#define DRM_IOCTL_TEGRA_SYNCPT_INCR DRM_IOWR(DRM_COMMAND_BASE + DRM_TEGRA_SYNCPT_INCR, struct drm_tegra_syncpt_incr)
-#define DRM_IOCTL_TEGRA_SYNCPT_WAIT DRM_IOWR(DRM_COMMAND_BASE + DRM_TEGRA_SYNCPT_WAIT, struct drm_tegra_syncpt_wait)
 #define DRM_IOCTL_TEGRA_OPEN_CHANNEL DRM_IOWR(DRM_COMMAND_BASE + DRM_TEGRA_OPEN_CHANNEL, struct drm_tegra_open_channel)
-#define DRM_IOCTL_TEGRA_CLOSE_CHANNEL DRM_IOWR(DRM_COMMAND_BASE + DRM_TEGRA_CLOSE_CHANNEL, struct drm_tegra_open_channel)
-#define DRM_IOCTL_TEGRA_GET_SYNCPT DRM_IOWR(DRM_COMMAND_BASE + DRM_TEGRA_GET_SYNCPT, struct drm_tegra_get_syncpt)
+#define DRM_IOCTL_TEGRA_CLOSE_CHANNEL DRM_IOWR(DRM_COMMAND_BASE + DRM_TEGRA_CLOSE_CHANNEL, struct drm_tegra_close_channel)
 #define DRM_IOCTL_TEGRA_SUBMIT DRM_IOWR(DRM_COMMAND_BASE + DRM_TEGRA_SUBMIT, struct drm_tegra_submit)
-#define DRM_IOCTL_TEGRA_GET_SYNCPT_BASE DRM_IOWR(DRM_COMMAND_BASE + DRM_TEGRA_GET_SYNCPT_BASE, struct drm_tegra_get_syncpt_base)
-#define DRM_IOCTL_TEGRA_GEM_SET_TILING DRM_IOWR(DRM_COMMAND_BASE + DRM_TEGRA_GEM_SET_TILING, struct drm_tegra_gem_set_tiling)
-#define DRM_IOCTL_TEGRA_GEM_GET_TILING DRM_IOWR(DRM_COMMAND_BASE + DRM_TEGRA_GEM_GET_TILING, struct drm_tegra_gem_get_tiling)
-#define DRM_IOCTL_TEGRA_GEM_SET_FLAGS DRM_IOWR(DRM_COMMAND_BASE + DRM_TEGRA_GEM_SET_FLAGS, struct drm_tegra_gem_set_flags)
-#define DRM_IOCTL_TEGRA_GEM_GET_FLAGS DRM_IOWR(DRM_COMMAND_BASE + DRM_TEGRA_GEM_GET_FLAGS, struct drm_tegra_gem_get_flags)
+
+#if defined(__cplusplus)
+}
+#endif
 
 #endif

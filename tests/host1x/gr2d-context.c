@@ -67,11 +67,11 @@ static void prepare_context(struct ctx2d *ctx,
 {
 	struct host1x_syncpt *syncpt = &ctx->gr2d->client->syncpts[0];
 	struct host1x_pixelbuffer *src;
+	struct host1x_fence *fence;
 	struct host1x_pushbuf *pb;
 	struct host1x_job *job;
 	struct host1x_bo *dst;
 	uint32_t handle;
-	uint32_t fence;
 	int err;
 
 	err = HOST1X_BO_EXPORT(target->bo, &handle);
@@ -101,7 +101,9 @@ static void prepare_context(struct ctx2d *ctx,
 	if (!pb)
 		abort();
 
+	/*
 	host1x_pushbuf_push(pb, HOST1X_OPCODE_SETCL(0, 0x51, 0));
+	*/
 
 	host1x_pushbuf_push(pb, HOST1X_OPCODE_MASK(0x009, 0x9));
 	host1x_pushbuf_push(pb, 0x0000003a); /* trigger */
@@ -135,9 +137,7 @@ static void prepare_context(struct ctx2d *ctx,
 	host1x_pushbuf_push(pb, src->pitch); /* srcst */
 	host1x_pushbuf_push(pb, height << 16 | width); /* dstsize */
 	host1x_pushbuf_push(pb, 0 << 16 | 0); /* srcps */
-
-	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x000, 1));
-	host1x_pushbuf_push(pb, 0x000001 << 8 | syncpt->id);
+	host1x_pushbuf_sync(pb, 0, 1, HOST1X_SYNC_COND_OP_DONE, true);
 
 	err = HOST1X_CLIENT_SUBMIT(ctx->gr2d->client, job);
 	if (err < 0)
@@ -153,9 +153,9 @@ static void prepare_context(struct ctx2d *ctx,
 static void exec_context(struct ctx2d *ctx, unsigned int dx, unsigned int dy)
 {
 	struct host1x_syncpt *syncpt = &ctx->gr2d->client->syncpts[0];
+	struct host1x_fence *fence;
 	struct host1x_pushbuf *pb;
 	struct host1x_job *job;
-	uint32_t fence;
 	int err;
 
 	job = HOST1X_JOB_CREATE(syncpt->id, 1);
@@ -168,9 +168,7 @@ static void exec_context(struct ctx2d *ctx, unsigned int dx, unsigned int dy)
 
 	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x03a, 1));
 	host1x_pushbuf_push(pb, dy << 16 | dx); /* dstps */
-
-	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x000, 1));
-	host1x_pushbuf_push(pb, 0x000001 << 8 | syncpt->id);
+	host1x_pushbuf_sync(pb, 0, 1, HOST1X_SYNC_COND_OP_DONE, true);
 
 	err = HOST1X_CLIENT_SUBMIT(ctx->gr2d->client, job);
 	if (err < 0)

@@ -84,8 +84,9 @@ struct host1x_client {
 	unsigned int num_syncpts;
 
 	int (*submit)(struct host1x_client *client, struct host1x_job *job);
-	int (*flush)(struct host1x_client *client, uint32_t *fence);
-	int (*wait)(struct host1x_client *client, uint32_t fence,
+	int (*flush)(struct host1x_client *client,
+		     struct host1x_fence **fencep);
+	int (*wait)(struct host1x_client *client, struct host1x_fence *fence,
 		    uint32_t timeout);
 };
 

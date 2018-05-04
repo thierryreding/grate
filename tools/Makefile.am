@@ -26,7 +26,7 @@ replay_CPPFLAGS = \
 	-I$(top_srcdir)/src/libhost1x \
 	-I$(top_srcdir)/src/libgrate
 
-replay_CFLAGS = $(ZLIB_CFLAGS)
+replay_CFLAGS = $(DRM_CFLAGS) $(ZLIB_CFLAGS)
 
 replay_LDADD = \
 	../src/libgrate/libgrate.la \

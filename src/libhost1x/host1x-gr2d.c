@@ -46,9 +46,9 @@
 static int host1x_gr2d_test(struct host1x_gr2d *gr2d)
 {
 	struct host1x_syncpt *syncpt = &gr2d->client->syncpts[0];
+	struct host1x_fence *fence;
 	struct host1x_pushbuf *pb;
 	struct host1x_job *job;
-	uint32_t fence;
 	int err = 0;
 
 	job = HOST1X_JOB_CREATE(syncpt->id, 1);
@@ -62,8 +62,7 @@ static int host1x_gr2d_test(struct host1x_gr2d *gr2d)
 	}
 
 	host1x_pushbuf_push(pb, HOST1X_OPCODE_SETCL(0x000, 0x051, 0x00));
-	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x000, 0x0001));
-	host1x_pushbuf_push(pb, 0x000001 << 8 | syncpt->id);
+	host1x_pushbuf_sync(pb, 0, 1, HOST1X_SYNC_COND_OP_DONE, true);
 
 	err = HOST1X_CLIENT_SUBMIT(gr2d->client, job);
 	if (err < 0) {
@@ -135,10 +134,10 @@ int host1x_gr2d_clear_rect(struct host1x_gr2d *gr2d,
 			   unsigned width, unsigned height)
 {
 	struct host1x_syncpt *syncpt = &gr2d->client->syncpts[0];
+	struct host1x_fence *fence;
 	struct host1x_pushbuf *pb;
 	struct host1x_job *job;
 	unsigned tiled = 0;
-	uint32_t fence;
 	int err;
 
 	job = HOST1X_JOB_CREATE(syncpt->id, 1);
@@ -189,8 +188,7 @@ int host1x_gr2d_clear_rect(struct host1x_gr2d *gr2d,
 	host1x_pushbuf_push(pb, HOST1X_OPCODE_MASK(0x38, 5));
 	host1x_pushbuf_push(pb, height << 16 | width);
 	host1x_pushbuf_push(pb, y << 16 | x);
-	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x00, 1));
-	host1x_pushbuf_push(pb, 0x000001 << 8 | syncpt->id);
+	host1x_pushbuf_sync(pb, 0, 1, HOST1X_SYNC_COND_OP_DONE, true);
 
 	err = HOST1X_CLIENT_SUBMIT(gr2d->client, job);
 	if (err < 0) {
@@ -223,6 +221,7 @@ int host1x_gr2d_blit(struct host1x_gr2d *gr2d,
 	struct host1x_bo *src_orig = src->bo->wrapped ?: src->bo;
 	struct host1x_bo *dst_orig = dst->bo->wrapped ?: dst->bo;
 	struct host1x_syncpt *syncpt = &gr2d->client->syncpts[0];
+	struct host1x_fence *fence;
 	struct host1x_pushbuf *pb;
 	struct host1x_job *job;
 	unsigned src_tiled = 0;
@@ -230,7 +229,6 @@ int host1x_gr2d_blit(struct host1x_gr2d *gr2d,
 	unsigned yflip = 0;
 	unsigned xdir = 0;
 	unsigned ydir = 0;
-	uint32_t fence;
 	int err;
 
 	if (PIX_BUF_FORMAT_BYTES(src->format) !=
@@ -356,9 +354,7 @@ yflip_setup:
 	host1x_pushbuf_push(pb, height << 16 | width); /* dstsize */
 	host1x_pushbuf_push(pb, sy << 16 | sx); /* srcps */
 	host1x_pushbuf_push(pb, dy << 16 | dx); /* dstps */
-
-	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x000, 1));
-	host1x_pushbuf_push(pb, 0x000001 << 8 | syncpt->id);
+	host1x_pushbuf_sync(pb, 0, 1, HOST1X_SYNC_COND_OP_DONE, true);
 
 	err = HOST1X_CLIENT_SUBMIT(gr2d->client, job);
 	if (err < 0) {
@@ -412,6 +408,7 @@ int host1x_gr2d_surface_blit(struct host1x_gr2d *gr2d,
 			     unsigned int dst_width, int dst_height)
 {
 	struct host1x_syncpt *syncpt = &gr2d->client->syncpts[0];
+	struct host1x_fence *fence;
 	struct host1x_pushbuf *pb;
 	struct host1x_job *job;
 	float inv_scale_x;
@@ -424,7 +421,6 @@ int host1x_gr2d_surface_blit(struct host1x_gr2d *gr2d,
 	unsigned hftype;
 	unsigned vftype;
 	unsigned vfen;
-	uint32_t fence;
 	int err;
 
 	switch (src->layout) {
@@ -611,8 +607,7 @@ coords_check:
 	host1x_pushbuf_push(pb,
 			    (dst_height - 1) << 16 | dst_width); /* dstsize */
 
-	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x000, 1));
-	host1x_pushbuf_push(pb, 0x000001 << 8 | syncpt->id);
+	host1x_pushbuf_sync(pb, 0, 1, HOST1X_SYNC_COND_OP_DONE, true);
 
 	err = HOST1X_CLIENT_SUBMIT(gr2d->client, job);
 	if (err < 0) {

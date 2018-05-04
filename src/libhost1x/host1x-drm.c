@@ -25,10 +25,12 @@
 #include <fcntl.h>
 #include <stdbool.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/poll.h>
 
 #include <libdrm/drm_fourcc.h>
 #include <xf86drm.h>
@@ -37,6 +39,15 @@
 #include "host1x-private.h"
 #include "tegra_drm.h"
 #include "x11-display.h"
+
+#define HOST1X_FENCE_WAIT (1 << 0)
+#define HOST1X_FENCE_EMIT (1 << 1)
+#define HOST1X_FENCE_FD   (1 << 2)
+
+struct host1x_fence {
+	unsigned int handle;
+	unsigned int flags;
+};
 
 struct drm;
 
@@ -54,7 +65,8 @@ struct drm_channel {
 	struct host1x_client client;
 	uint64_t context;
 	struct drm *drm;
-	uint32_t fence;
+
+	struct host1x_fence fence;
 };
 
 static inline struct drm_channel *to_drm_channel(struct host1x_client *client)
@@ -523,11 +535,13 @@ static struct host1x_bo *drm_bo_create(struct host1x *host1x,
 	memset(&args, 0, sizeof(args));
 	args.size = size;
 
+	/*
 	if (flags & HOST1X_BO_CREATE_FLAG_BOTTOM_UP)
 		args.flags |= DRM_TEGRA_GEM_CREATE_BOTTOM_UP;
 
 	if (flags & HOST1X_BO_CREATE_FLAG_TILED)
 		args.flags |= DRM_TEGRA_GEM_CREATE_TILED;
+	*/
 
 	err = ioctl(drm->fd, DRM_IOCTL_TEGRA_GEM_CREATE, &args);
 	if (err < 0) {
@@ -640,7 +654,8 @@ static int drm_framebuffer_init(struct host1x *host1x,
 	return 0;
 }
 
-static int drm_channel_open(struct drm *drm, uint32_t class, uint64_t *channel)
+static int drm_channel_open(struct drm *drm, uint32_t class, uint64_t *channel,
+			    unsigned int *num_syncpts)
 {
 	struct drm_tegra_open_channel args;
 	int err;
@@ -652,78 +667,179 @@ static int drm_channel_open(struct drm *drm, uint32_t class, uint64_t *channel)
 	if (err < 0)
 		return -errno;
 
+	*num_syncpts = args.syncpts;
 	*channel = args.context;
 
+	return 0;
+}
+
+static int add_buffer(struct drm_tegra_buffer **buffersp,
+		      unsigned int *num_buffersp, uint32_t handle)
+{
+	unsigned int num_buffers = *num_buffersp, i;
+	struct drm_tegra_buffer *buf = *buffersp;
+
+	for (i = 0; i < num_buffers; i++) {
+		if (buf[i].handle == handle)
+			return 0;
+	}
+
+	buf = realloc(buf, (num_buffers + 1) * sizeof(*buf));
+	if (!buf)
+		return -ENOMEM;
+
+	buf[num_buffers].handle = handle;
+
+	*num_buffersp = num_buffers + 1;
+	*buffersp = buf;
+
+	return 0;
+}
+
+static unsigned int get_buffer_index(struct drm_tegra_buffer *buffers,
+				     unsigned int num_buffers,
+				     uint32_t handle)
+{
+	unsigned int i;
+
+	for (i = 0; i < num_buffers; i++) {
+		if (buffers[i].handle == handle)
+			return i;
+	}
+
+	abort();
 	return 0;
 }
 
 static int drm_channel_submit(struct host1x_client *client,
 			      struct host1x_job *job)
 {
+	unsigned int i, j, num_buffers = 0, num_relocs = 0, num_fences = 0;
 	struct drm_channel *channel = to_drm_channel(client);
+	struct drm_tegra_buffer *buffers = NULL;
 	struct drm_tegra_reloc *relocs, *reloc;
-	unsigned int i, j, num_relocs = 0;
+	struct drm_tegra_fence *fences, *fence;
 	struct drm_tegra_cmdbuf *cmdbufs;
-	struct drm_tegra_syncpt syncpt;
 	struct drm_tegra_submit args;
 	int err;
 
-	memset(&syncpt, 0, sizeof(syncpt));
-	syncpt.id = job->syncpt;
-	syncpt.incrs = job->syncpt_incrs;
-
-	cmdbufs = calloc(job->num_pushbufs, sizeof(*cmdbufs));
-	if (!cmdbufs)
-		return -ENOMEM;
-
 	for (i = 0; i < job->num_pushbufs; i++) {
 		struct host1x_pushbuf *pushbuf = &job->pushbufs[i];
-		struct drm_tegra_cmdbuf *cmdbuf = &cmdbufs[i];
 
-		cmdbuf->handle = pushbuf->bo->handle;
-		cmdbuf->offset = pushbuf->offset;
-		cmdbuf->words = pushbuf->length;
+		err = add_buffer(&buffers, &num_buffers, pushbuf->bo->handle);
+		if (err < 0) {
+			free(buffers);
+			return err;
+		}
+
+		for (j = 0; j < pushbuf->num_relocs; j++) {
+			struct host1x_pushbuf_reloc *r = &pushbuf->relocs[j];
+
+			err = add_buffer(&buffers, &num_buffers,
+					 r->target_handle);
+			if (err < 0) {
+				free(buffers);
+				return err;
+			}
+		}
 
 		num_relocs += pushbuf->num_relocs;
+		num_fences += pushbuf->num_fences;
+	}
+
+	cmdbufs = calloc(job->num_pushbufs, sizeof(*cmdbufs));
+	if (!cmdbufs) {
+		free(buffers);
+		return -ENOMEM;
 	}
 
 	relocs = calloc(num_relocs, sizeof(*relocs));
 	if (!relocs) {
 		free(cmdbufs);
+		free(buffers);
 		return -ENOMEM;
 	}
 
 	reloc = relocs;
 
+	fences = calloc(num_fences, sizeof(*fences));
+	if (!fences) {
+		free(relocs);
+		free(cmdbufs);
+		free(buffers);
+		return -ENOMEM;
+	}
+
+	fence = fences;
+
 	for (i = 0; i < job->num_pushbufs; i++) {
 		struct host1x_pushbuf *pushbuf = &job->pushbufs[i];
+		struct drm_tegra_cmdbuf *cmdbuf = &cmdbufs[i];
+
+		cmdbuf->index = get_buffer_index(buffers, num_buffers,
+						 pushbuf->bo->handle);
+		cmdbuf->offset = pushbuf->offset;
+		cmdbuf->words = pushbuf->length;
+
+		/* XXX flags */
 
 		for (j = 0; j < pushbuf->num_relocs; j++) {
 			struct host1x_pushbuf_reloc *r = &pushbuf->relocs[j];
 
-			reloc->cmdbuf.handle = pushbuf->bo->handle;
+			reloc->cmdbuf.index = get_buffer_index(buffers,
+							       num_buffers,
+							       pushbuf->bo->handle);
 			reloc->cmdbuf.offset = r->source_offset;
-			reloc->target.handle = r->target_handle;
+			reloc->target.index = get_buffer_index(buffers,
+							       num_buffers,
+							       r->target_handle);
 			reloc->target.offset = r->target_offset;
 			reloc->shift = r->shift;
 
+			/* XXX flags */
+
 			reloc++;
+		}
+
+		if (pushbuf->num_fences) {
+			cmdbuf->num_fences = pushbuf->num_fences;
+			cmdbuf->fences = (uintptr_t)fence;
+		}
+
+		for (j = 0; j < pushbuf->num_fences; j++) {
+			struct host1x_pushbuf_fence *f = &pushbuf->fences[j];
+
+			fence->handle = f->handle;
+
+			if (f->flags & HOST1X_PUSHBUF_FENCE_WAIT)
+				fence->flags |= DRM_TEGRA_FENCE_WAIT;
+
+			if (f->flags & HOST1X_PUSHBUF_FENCE_EMIT)
+				fence->flags |= DRM_TEGRA_FENCE_EMIT;
+
+			if (f->flags & HOST1X_PUSHBUF_FENCE_FD)
+				fence->flags |= DRM_TEGRA_FENCE_FD;
+
+			fence->offset = f->offset;
+			fence->index = f->index;
+			fence->value = f->value;
+
+			fence++;
 		}
 	}
 
 	memset(&args, 0, sizeof(args));
 	args.context = channel->context;
-	args.num_syncpts = 1;
+	args.num_buffers = num_buffers;
 	args.num_cmdbufs = job->num_pushbufs;
 	args.num_relocs = num_relocs;
-	args.num_waitchks = 0;
-	args.waitchk_mask = 0;
 	args.timeout = 1000;
 
-	args.syncpts = (unsigned long)&syncpt;
+	args.buffers = (unsigned long)buffers;
 	args.cmdbufs = (unsigned long)cmdbufs;
 	args.relocs = (unsigned long)relocs;
-	args.waitchks = 0;
+
+	/* XXX flags */
 
 	err = ioctl(channel->drm->fd, DRM_IOCTL_TEGRA_SUBMIT, &args);
 	if (err < 0) {
@@ -731,58 +847,136 @@ static int drm_channel_submit(struct host1x_client *client,
 			     errno);
 		err = -errno;
 	} else {
-		channel->fence = args.fence;
+		channel->fence.handle = 0;
+		channel->fence.flags = 0;
+
+		for (i = 0; i < num_fences; i++) {
+			if (fences[i].flags & DRM_TEGRA_FENCE_EMIT) {
+				channel->fence.handle = fences[i].handle;
+				channel->fence.flags = HOST1X_FENCE_EMIT;
+
+				if (fences[i].flags & DRM_TEGRA_FENCE_WAIT)
+					channel->fence.flags |= HOST1X_FENCE_WAIT;
+
+				if (fences[i].flags & DRM_TEGRA_FENCE_FD)
+					channel->fence.flags |= HOST1X_FENCE_FD;
+			}
+		}
+
 		err = 0;
 	}
 
+	free(fences);
 	free(relocs);
 	free(cmdbufs);
+	free(buffers);
 
 	return err;
 }
 
-static int drm_channel_flush(struct host1x_client *client, uint32_t *fence)
+static int drm_channel_flush(struct host1x_client *client,
+			     struct host1x_fence **fencep)
 {
 	struct drm_channel *channel = to_drm_channel(client);
 
-	*fence = channel->fence;
+	*fencep = &channel->fence;
 
 	return 0;
 }
 
-static int drm_channel_wait(struct host1x_client *client, uint32_t fence,
+static int drm_syncobj_destroy(int fd, uint32_t handle)
+{
+	struct drm_syncobj_destroy args;
+	int err;
+
+	memset(&args, 0, sizeof(args));
+	args.handle = handle;
+
+	err = ioctl(fd, DRM_IOCTL_SYNCOBJ_DESTROY, &args);
+	if (err < 0)
+		return -errno;
+
+	return 0;
+}
+
+uint64_t clock_get_nanoseconds(void)
+{
+	struct timespec ts;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+
+	return ts.tv_sec * UINT64_C(1000000000) + ts.tv_nsec;
+}
+
+static int drm_channel_wait(struct host1x_client *client,
+			    struct host1x_fence *fence,
 			    uint32_t timeout)
 {
 	struct drm_channel *channel = to_drm_channel(client);
-	struct drm_tegra_syncpt_wait args;
-	struct host1x_syncpt *syncpt;
 	int err;
 
-	syncpt = &channel->client.syncpts[0];
+	if ((fence->flags & HOST1X_FENCE_EMIT) == 0)
+		return 0;
 
-	memset(&args, 0, sizeof(args));
-	args.id = syncpt->id;
-	args.thresh = fence;
-	args.timeout = timeout;
+	if (fence->flags & HOST1X_FENCE_FD) {
+		while (true) {
+			struct pollfd fds = {
+				.fd = fence->handle,
+				.events = POLLIN,
+			};
 
-	err = ioctl(channel->drm->fd, DRM_IOCTL_TEGRA_SYNCPT_WAIT, &args);
-	if (err < 0) {
-		host1x_error("ioctl(DRM_IOCTL_TEGRA_SYNCPT_WAIT) failed: %d\n",
-			     errno);
-		return -errno;
+			err = poll(&fds, 0, timeout);
+			if (err > 0) {
+				if (fds.revents & (POLLERR | POLLNVAL))
+					err = -EINVAL;
+				else
+					err = 0;
+
+				break;
+			}
+
+			if (err == 0) {
+				err = -ETIMEDOUT;
+				break;
+			}
+
+			if (errno != EINTR && errno != EAGAIN) {
+				err = -errno;
+				break;
+			}
+		}
+
+		close(fence->handle);
+	} else {
+		struct drm_syncobj_wait args;
+		uint64_t timeout;
+
+		timeout = clock_get_nanoseconds() + UINT64_C(5 * 1000000000);
+
+		memset(&args, 0, sizeof(args));
+		args.handles = (uintptr_t)&fence->handle;
+		args.count_handles = 1;
+		args.timeout_nsec = timeout;
+		args.flags = DRM_SYNCOBJ_WAIT_FLAGS_WAIT_ALL;
+
+		err = ioctl(channel->drm->fd, DRM_IOCTL_SYNCOBJ_WAIT, &args);
+		if (err < 0)
+			err = -errno;
+
+		drm_syncobj_destroy(channel->drm->fd, fence->handle);
 	}
 
-	return 0;
+	return err;
 }
 
 static int drm_channel_init(struct drm *drm, struct drm_channel *channel,
-			    uint32_t class, unsigned int num_syncpts)
+			    uint32_t class)
 {
 	struct host1x_syncpt *syncpts;
-	unsigned int i;
+	unsigned int num_syncpts = 0;
 	int err;
 
-	err = drm_channel_open(drm, class, &channel->context);
+	err = drm_channel_open(drm, class, &channel->context, &num_syncpts);
 	if (err < 0)
 		return err;
 
@@ -794,23 +988,6 @@ static int drm_channel_init(struct drm *drm, struct drm_channel *channel,
 
 	channel->client.num_syncpts = num_syncpts;
 	channel->client.syncpts = syncpts;
-
-	for (i = 0; i < num_syncpts; i++) {
-		struct drm_tegra_get_syncpt args;
-
-		memset(&args, 0, sizeof(args));
-		args.context = channel->context;
-		args.index = i;
-
-		err = ioctl(drm->fd, DRM_IOCTL_TEGRA_GET_SYNCPT, &args);
-		if (err < 0) {
-			syncpts[i].id = 0;
-			continue;
-		}
-
-		syncpts[i].id = args.id;
-		syncpts[i].value = 0;
-	}
 
 	channel->client.submit = drm_channel_submit;
 	channel->client.flush = drm_channel_flush;
@@ -844,7 +1021,7 @@ static int drm_gr2d_create(struct drm_gr2d **gr2dp, struct drm *drm)
 	if (!gr2d)
 		return -ENOMEM;
 
-	err = drm_channel_init(drm, &gr2d->channel, HOST1X_CLASS_GR2D, 1);
+	err = drm_channel_init(drm, &gr2d->channel, HOST1X_CLASS_GR2D);
 	if (err < 0) {
 		free(gr2d);
 		return err;
@@ -882,7 +1059,7 @@ static int drm_gr3d_create(struct drm_gr3d **gr3dp, struct drm *drm)
 	if (!gr3d)
 		return -ENOMEM;
 
-	err = drm_channel_init(drm, &gr3d->channel, HOST1X_CLASS_GR3D, 1);
+	err = drm_channel_init(drm, &gr3d->channel, HOST1X_CLASS_GR3D);
 	if (err < 0) {
 		free(gr3d);
 		return err;

@@ -4,7 +4,8 @@ AM_CPPFLAGS = \
 
 AM_LDFLAGS = -static
 
-noinst_PROGRAMS = \
+libexecdir = $(libdir)/$(PACKAGE)
+libexec_PROGRAMS = \
 	gr2d-clear \
 	gr2d-context \
 	gr3d-triangle

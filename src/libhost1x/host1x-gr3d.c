@@ -44,9 +44,9 @@
 static int host1x_gr3d_test(struct host1x_gr3d *gr3d)
 {
 	struct host1x_syncpt *syncpt = &gr3d->client->syncpts[0];
+	struct host1x_fence *fence;
 	struct host1x_pushbuf *pb;
 	struct host1x_job *job;
-	uint32_t fence;
 	int err = 0;
 
 	job = HOST1X_JOB_CREATE(syncpt->id, 1);
@@ -60,8 +60,7 @@ static int host1x_gr3d_test(struct host1x_gr3d *gr3d)
 	}
 
 	host1x_pushbuf_push(pb, HOST1X_OPCODE_SETCL(0x000, 0x060, 0x00));
-	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x000, 0x0001));
-	host1x_pushbuf_push(pb, 0x000001 << 8 | syncpt->id);
+	host1x_pushbuf_sync(pb, 0, 1, HOST1X_SYNC_COND_OP_DONE, true);
 
 	err = HOST1X_CLIENT_SUBMIT(gr3d->client, job);
 	if (err < 0) {
@@ -135,10 +134,10 @@ static void host1x_gr3d_reset_hw(void)
 static int host1x_gr3d_reset(struct host1x_gr3d *gr3d)
 {
 	struct host1x_syncpt *syncpt = &gr3d->client->syncpts[0];
+	struct host1x_fence *fence;
 	struct host1x_pushbuf *pb;
 	struct host1x_job *job;
 	unsigned int i;
-	uint32_t fence;
 	int err;
 
 	host1x_gr3d_reset_hw();
@@ -319,8 +318,7 @@ static int host1x_gr3d_reset(struct host1x_gr3d *gr3d)
 	host1x_pushbuf_push(pb, HOST1X_OPCODE_IMM(0xe28, 0x0000));
 	host1x_pushbuf_push(pb, HOST1X_OPCODE_IMM(0xe29, 0x0000));
 
-	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x00, 0x01));
-	host1x_pushbuf_push(pb, 0x000001 << 8 | syncpt->id);
+	host1x_pushbuf_sync(pb, 0, 1, HOST1X_SYNC_COND_OP_DONE, true);
 
 	err = HOST1X_CLIENT_SUBMIT(gr3d->client, job);
 	if (err < 0)
@@ -397,12 +395,12 @@ int host1x_gr3d_triangle(struct host1x_gr3d *gr3d,
 {
 	struct host1x_syncpt *syncpt = &gr3d->client->syncpts[0];
 	float *attr = gr3d->attributes->ptr;
+	struct host1x_fence *fence;
 	struct host1x_pushbuf *pb;
 	unsigned int depth = 32;
 	struct host1x_job *job;
-	uint32_t format;
 	uint16_t *indices;
-	uint32_t fence;
+	uint32_t format;
 	int err, i;
 
 	/* XXX: count syncpoint increments in command stream */
@@ -486,10 +484,8 @@ int host1x_gr3d_triangle(struct host1x_gr3d *gr3d,
 	host1x_pushbuf_push(pb, HOST1X_OPCODE_INCR(0x34c, 0x2));
 	host1x_pushbuf_push(pb, 0x00000002);
 	host1x_pushbuf_push(pb, 0x3f000000);
-	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x000, 0x1));
-	host1x_pushbuf_push(pb, 0x000002 << 8 | syncpt->id);
-	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x000, 0x1));
-	host1x_pushbuf_push(pb, 0x000002 << 8 | syncpt->id);
+	host1x_pushbuf_sync(pb, 0, 1, HOST1X_SYNC_COND_RD_DONE, false);
+	host1x_pushbuf_sync(pb, 0, 1, HOST1X_SYNC_COND_RD_DONE, false);
 	host1x_pushbuf_push(pb, HOST1X_OPCODE_MASK(0x352, 0x1b));
 
 	host1x_pushbuf_push_float(pb, (float)pixbuf->width * 8.0f);
@@ -550,10 +546,8 @@ int host1x_gr3d_triangle(struct host1x_gr3d *gr3d,
 		host1x_pushbuf_push(pb, HOST1X_OPCODE_IMM(0xa08, 0x100));
 	}
 
-	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x000, 0x01));
-	host1x_pushbuf_push(pb, 0x000002 << 8 | syncpt->id);
-	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x000, 0x01));
-	host1x_pushbuf_push(pb, 0x000002 << 8 | syncpt->id);
+	host1x_pushbuf_sync(pb, 0, 1, HOST1X_SYNC_COND_RD_DONE, false);
+	host1x_pushbuf_sync(pb, 0, 1, HOST1X_SYNC_COND_RD_DONE, false);
 
 	/*
 	  Command Buffer:
@@ -678,11 +672,9 @@ int host1x_gr3d_triangle(struct host1x_gr3d *gr3d,
 	host1x_pushbuf_push(pb, HOST1X_OPCODE_INCR(0x344, 0x02));
 	host1x_pushbuf_push(pb, 0x00000000);
 	host1x_pushbuf_push(pb, 0x00000000);
-	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x000, 0x01));
-	host1x_pushbuf_push(pb, 0x000001 << 8 | syncpt->id);
+	host1x_pushbuf_sync(pb, 0, 1, HOST1X_SYNC_COND_OP_DONE, false);
 	host1x_pushbuf_push(pb, HOST1X_OPCODE_IMM(0xa00, 0xe01));
-	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x00, 0x01));
-	host1x_pushbuf_push(pb, 0x000002 << 8 | syncpt->id);
+	host1x_pushbuf_sync(pb, 0, 1, HOST1X_SYNC_COND_RD_DONE, false);
 	host1x_pushbuf_push(pb, HOST1X_OPCODE_IMM(0xe21, 0x0140));
 	host1x_pushbuf_push(pb, HOST1X_OPCODE_INCR(0xe01, 0x01));
 	/* relocate color render target */
@@ -705,12 +697,9 @@ int host1x_gr3d_triangle(struct host1x_gr3d *gr3d,
 	host1x_pushbuf_push(pb, 0xec000000);
 	host1x_pushbuf_push(pb, 0x00200000);
 	host1x_pushbuf_push(pb, HOST1X_OPCODE_IMM(0xe27, 0x02));
-	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x000, 0x01));
-	host1x_pushbuf_push(pb, 0x000002 << 8 | syncpt->id);
-	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x000, 0x01));
-	host1x_pushbuf_push(pb, 0x000001 << 8 | syncpt->id);
-	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x00, 0x01));
-	host1x_pushbuf_push(pb, 0x000001 << 8 | syncpt->id);
+	host1x_pushbuf_sync(pb, 0, 1, HOST1X_SYNC_COND_RD_DONE, false);
+	host1x_pushbuf_sync(pb, 0, 1, HOST1X_SYNC_COND_OP_DONE, false);
+	host1x_pushbuf_sync(pb, 0, 1, HOST1X_SYNC_COND_OP_DONE, true);
 
 	err = HOST1X_CLIENT_SUBMIT(gr3d->client, job);
 	if (err < 0) {

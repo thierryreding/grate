@@ -873,9 +873,9 @@ void grate_3d_draw_elements(struct grate_3d_ctx *ctx,
 	struct grate *grate = ctx->grate;
 	struct host1x_gr3d *gr3d = host1x_get_gr3d(grate->host1x);
 	struct host1x_syncpt *syncpt = &gr3d->client->syncpts[0];
+	struct host1x_fence *fence;
 	struct host1x_pushbuf *pb;
 	struct host1x_job *job;
-	uint32_t fence;
 	int err;
 
 	if (!ctx->program) {
@@ -927,8 +927,7 @@ void grate_3d_draw_elements(struct grate_3d_ctx *ctx,
 	grate_3d_set_draw_params(pb, ctx, primitive_type, index_mode);
 	grate_3d_draw_primitives(pb, vtx_count);
 
-	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x00, 0x01));
-	host1x_pushbuf_push(pb, 0x000001 << 8 | syncpt->id);
+	host1x_pushbuf_sync(pb, 0, 1, HOST1X_SYNC_COND_OP_DONE, true);
 
 	err = HOST1X_CLIENT_SUBMIT(gr3d->client, job);
 	if (err < 0) {

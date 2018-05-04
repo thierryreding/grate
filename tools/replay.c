@@ -140,11 +140,13 @@ static void create_bo(unsigned int id, unsigned int ctx_id,
 	rbo = calloc(1, sizeof(*rbo));
 	assert(rbo != NULL);
 
+	/*
 	if (flags & DRM_TEGRA_GEM_CREATE_TILED)
 		grate_flags |= HOST1X_BO_CREATE_FLAG_TILED;
 
 	if (flags & DRM_TEGRA_GEM_CREATE_BOTTOM_UP)
 		grate_flags |= HOST1X_BO_CREATE_FLAG_BOTTOM_UP;
+	*/
 
 	rbo->id = id;
 	rbo->bo = HOST1X_BO_CREATE(host1x, size, grate_flags);
@@ -386,6 +388,7 @@ static int submit_job(unsigned int ctx_id,
 	struct host1x_syncpt *syncpt;
 	struct rep_framebuffer *rfb;
 	struct record_reloc *relocs;
+	struct host1x_fence *fence;
 	struct host1x_pushbuf *pb;
 	struct host1x_job *job;
 	struct rep_ctx *ctx;
@@ -393,7 +396,6 @@ static int submit_job(unsigned int ctx_id,
 	bool *handled_relocs;
 	unsigned int size;
 	unsigned int i, k;
-	uint32_t fence;
 	int ret;
 
 	job_ctx = lookup_job_context(ctx_id);

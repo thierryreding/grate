@@ -84,12 +84,14 @@ static int host1x_dummy_submit(struct host1x_client *client,
 	return 0;
 }
 
-static int host1x_dummy_flush(struct host1x_client *client, uint32_t *fence)
+static int host1x_dummy_flush(struct host1x_client *client,
+			      struct host1x_fence **fencep)
 {
 	return 0;
 }
 
-static int host1x_dummy_wait(struct host1x_client *client, uint32_t fence,
+static int host1x_dummy_wait(struct host1x_client *client,
+			     struct host1x_fence *fence,
 			     uint32_t timeout)
 {
 	return 0;

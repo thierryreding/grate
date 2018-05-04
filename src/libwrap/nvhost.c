@@ -168,7 +168,7 @@ static void nvmap_file_enter_ioctl_write(struct nvmap_file *nvmap,
 
 	dest = (uint8_t *)handle->buffer + op->offset;
 	end = (uint8_t *)handle->buffer + handle->size;
-	src = (uint8_t *)op->addr;
+	src = (uint8_t *)(uintptr_t)op->addr;
 
 	for (i = 0; i < op->count; i++) {
 		print_hexdump(stdout, DUMP_PREFIX_NONE, "  ", src,

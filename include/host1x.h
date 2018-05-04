@@ -68,6 +68,7 @@ struct host1x_client;
 struct host1x_gr2d;
 struct host1x_gr3d;
 struct host1x_bo_priv;
+struct host1x_fence;
 struct host1x;
 
 struct host1x_bo {
@@ -303,6 +304,27 @@ struct host1x_pushbuf_reloc {
 	unsigned long shift;
 };
 
+#define HOST1X_PUSHBUF_FENCE_WAIT    (1 << 0)
+#define HOST1X_PUSHBUF_FENCE_EMIT    (1 << 1)
+#define HOST1X_PUSHBUF_FENCE_SYNCOBJ (0 << 2)
+#define HOST1X_PUSHBUF_FENCE_FD      (1 << 2)
+
+struct host1x_pushbuf_fence {
+	unsigned int handle;
+	unsigned int flags;
+	unsigned int offset;
+	unsigned int index;
+	unsigned int value;
+};
+
+enum host1x_sync_cond {
+	HOST1X_SYNC_COND_IMMEDIATE,
+	HOST1X_SYNC_COND_OP_DONE,
+	HOST1X_SYNC_COND_RD_DONE,
+	HOST1X_SYNC_COND_WR_SAFE,
+	HOST1X_SYNC_COND_MAX,
+};
+
 struct host1x_pushbuf {
 	struct host1x_bo *bo;
 	unsigned long offset;
@@ -310,6 +332,9 @@ struct host1x_pushbuf {
 
 	struct host1x_pushbuf_reloc *relocs;
 	unsigned long num_relocs;
+
+	struct host1x_pushbuf_fence *fences;
+	unsigned int num_fences;
 
 	uint32_t *ptr;
 };
@@ -330,9 +355,14 @@ struct host1x_pushbuf *host1x_job_append(struct host1x_job *job,
 int host1x_pushbuf_push(struct host1x_pushbuf *pb, uint32_t word);
 int host1x_pushbuf_relocate(struct host1x_pushbuf *pb, struct host1x_bo *target,
 			    unsigned long offset, unsigned long shift);
+int host1x_pushbuf_sync(struct host1x_pushbuf *pb, unsigned int index,
+			unsigned int value, enum host1x_sync_cond cond,
+			bool emit);
 int host1x_client_submit(struct host1x_client *client, struct host1x_job *job);
-int host1x_client_flush(struct host1x_client *client, uint32_t *fence);
-int host1x_client_wait(struct host1x_client *client, uint32_t fence,
+int host1x_client_flush(struct host1x_client *client,
+			struct host1x_fence **fencep);
+int host1x_client_wait(struct host1x_client *client,
+		       struct host1x_fence *fence,
 		       uint32_t timeout);
 
 static inline int host1x_pushbuf_push_float(struct host1x_pushbuf *pb, float f)
@@ -385,6 +415,23 @@ static inline int host1x_pushbuf_relocate_helper(struct host1x_pushbuf *pb,
 	return err;
 }
 
+static inline int host1x_pushbuf_sync_helper(struct host1x_pushbuf *pb,
+					     unsigned int index,
+					     unsigned int value,
+					     enum host1x_sync_cond cond,
+					     bool emit,
+					     const char *file,
+					     int line)
+{
+	int err = host1x_pushbuf_sync(pb, index, value, cond, emit);
+	if (err)
+		fprintf(stderr,
+			"ERROR: %s:%d: host1x_pushbuf_sync() failed: %d\n",
+			file, line, err);
+
+	return err;
+}
+
 static inline int host1x_client_submit_helper(struct host1x_client *client,
 					      struct host1x_job *job,
 					      const char *file, int line)
@@ -398,10 +445,10 @@ static inline int host1x_client_submit_helper(struct host1x_client *client,
 }
 
 static inline int host1x_client_flush_helper(struct host1x_client *client,
-					     uint32_t *fence,
+					     struct host1x_fence **fencep,
 					     const char *file, int line)
 {
-	int err = host1x_client_flush(client, fence);
+	int err = host1x_client_flush(client, fencep);
 	if (err)
 		fprintf(stderr,
 			"ERROR: %s:%d: host1x_client_flush() failed %d\n",
@@ -410,14 +457,15 @@ static inline int host1x_client_flush_helper(struct host1x_client *client,
 }
 
 static inline int host1x_client_wait_helper(struct host1x_client *client,
-					    uint32_t fence, uint32_t timeout,
+					    struct host1x_fence *fence,
+					    uint32_t timeout,
 					    const char *file, int line)
 {
 	int err = host1x_client_wait(client, fence, timeout);
 	if (err)
 		fprintf(stderr,
-			"ERROR: %s:%d: host1x_client_wait() failed %d\n",
-			file, line, err);
+			"ERROR: %s:%d: host1x_client_wait(timeout=%u) failed %d\n",
+			file, line, timeout, err);
 	return err;
 }
 
@@ -430,6 +478,10 @@ static inline int host1x_client_wait_helper(struct host1x_client *client,
 #define HOST1X_PUSHBUF_RELOCATE(pb, target, offset, shift) \
 	host1x_pushbuf_relocate_helper(pb, target, offset, shift, \
 					__FILE__, __LINE__)
+
+#define HOST1X_PUSHBUF_SYNC(pb, index, value, cond, emit) \
+	host1x_pushbuf_sync_helper(pb, index, value, cond, emit, \
+				   __FILE__, __LINE__)
 
 #define HOST1X_CLIENT_SUBMIT(client, job) \
 	host1x_client_submit_helper(client, job, __FILE__, __LINE__)

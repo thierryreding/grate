@@ -31,6 +31,10 @@
 
 #include "nvhost.h"
 
+struct host1x_fence {
+	unsigned int value;
+};
+
 struct nvhost_ctrl_syncpt_read_args {
 	uint32_t id;
 	uint32_t value;
@@ -317,22 +321,37 @@ static int nvhost_client_submit(struct host1x_client *client,
 	return 0;
 }
 
-static int nvhost_client_flush(struct host1x_client *client, uint32_t *fencep)
+static int nvhost_client_flush(struct host1x_client *client,
+			       struct host1x_fence **fencep)
 {
 	struct nvhost_client *nvhost = to_nvhost_client(client);
-	struct nvhost_get_param_args fence;
+	struct nvhost_get_param_args args;
+	struct host1x_fence *fence;
 	int err;
 
-	err = ioctl(nvhost->fd, NVHOST_IOCTL_CHANNEL_FLUSH, &fence);
-	if (err < 0)
-		return -errno;
+	fence = calloc(1, sizeof(*fence));
+	if (!fence)
+		return -ENOMEM;
 
-	*fencep = fence.value;
+	err = ioctl(nvhost->fd, NVHOST_IOCTL_CHANNEL_FLUSH, &args);
+	if (err < 0) {
+		err = -errno;
+		free(fence);
+		return err;
+	}
+
+	fence->value = args.value;
+
+	if (fencep)
+		*fencep = fence;
+	else
+		free(fence);
 
 	return 0;
 }
 
-static int nvhost_client_wait(struct host1x_client *client, uint32_t fence,
+static int nvhost_client_wait(struct host1x_client *client,
+			      struct host1x_fence *fence,
 			      uint32_t timeout)
 {
 	struct nvhost_client *nvhost = to_nvhost_client(client);
@@ -342,16 +361,21 @@ static int nvhost_client_wait(struct host1x_client *client, uint32_t fence,
 
 	memset(&args, 0, sizeof(args));
 	args.id = syncpt->id;
-	args.thresh = fence;
+	args.thresh = fence->value;
 	args.timeout = timeout;
 
 	err = ioctl(nvhost->ctrl->fd, NVHOST_IOCTL_CTRL_SYNCPT_WAITEX, &args);
-	if (err < 0)
-		return -errno;
+	if (err < 0) {
+		err = -errno;
+		free(fence);
+		return err;
+	}
 
 	if (args.value != args.thresh)
 		host1x_error("Syncpt %u: value:%u != thresh:%u\n",
 			     args.id, args.value, args.thresh);
+
+	free(fence);
 
 	return 0;
 }

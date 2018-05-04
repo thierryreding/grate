@@ -85,10 +85,18 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	err = host1x_gr2d_clear(gr2d, fb->pixbuf, 0xFFFF00FF);
-	if (err < 0) {
-		fprintf(stderr, "host1x_gr2d_clear() failed: %d\n", err);
-		return 1;
+	if (0) {
+		void *ptr;
+
+		HOST1X_BO_MMAP(fb->pixbuf->bo, &ptr);
+
+		memset(ptr, 0xff, fb->pixbuf->bo->size);
+	} else {
+		err = host1x_gr2d_clear(gr2d, fb->pixbuf, 0xFFFF00FF);
+		if (err < 0) {
+			fprintf(stderr, "host1x_gr2d_clear() failed: %d\n", err);
+			return 1;
+		}
 	}
 
 	if (display) {

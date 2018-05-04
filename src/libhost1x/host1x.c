@@ -335,17 +335,70 @@ int host1x_pushbuf_relocate(struct host1x_pushbuf *pb, struct host1x_bo *target,
 	return 0;
 }
 
+static int host1x_pushbuf_add_fence(struct host1x_pushbuf *pb,
+				    struct host1x_pushbuf_fence *fence)
+{
+	struct host1x_pushbuf_fence *fences;
+	size_t size;
+
+	size = (pb->num_fences + 1) * sizeof(*fence);
+
+	fences = realloc(pb->fences, size);
+	if (!fences)
+		return -ENOMEM;
+
+	fences[pb->num_fences++] = *fence;
+	pb->fences = fences;
+
+	return 0;
+}
+
+int host1x_pushbuf_sync(struct host1x_pushbuf *pb, unsigned int index,
+			unsigned int value, enum host1x_sync_cond cond,
+			bool emit)
+{
+	struct host1x_pushbuf_fence fence;
+	int err;
+
+	if (cond >= HOST1X_SYNC_COND_MAX)
+		return -EINVAL;
+
+	/* XXX */
+	if (!emit)
+		return 0;
+
+	host1x_pushbuf_push(pb, HOST1X_OPCODE_NONINCR(0x0, 0x1));
+	host1x_pushbuf_push(pb, cond);
+
+	memset(&fence, 0, sizeof(fence));
+
+	if (emit)
+		fence.flags = HOST1X_PUSHBUF_FENCE_EMIT;
+
+	fence.offset = (pb->length - 1) * 4;
+	fence.index = index;
+	fence.value = value;
+
+	err = host1x_pushbuf_add_fence(pb, &fence);
+	if (err < 0)
+		return err;
+
+	return 0;
+}
+
 int host1x_client_submit(struct host1x_client *client, struct host1x_job *job)
 {
 	return client->submit(client, job);
 }
 
-int host1x_client_flush(struct host1x_client *client, uint32_t *fence)
+int host1x_client_flush(struct host1x_client *client,
+			struct host1x_fence **fencep)
 {
-	return client->flush(client, fence);
+	return client->flush(client, fencep);
 }
 
-int host1x_client_wait(struct host1x_client *client, uint32_t fence,
+int host1x_client_wait(struct host1x_client *client,
+		       struct host1x_fence *fence,
 		       uint32_t timeout)
 {
 	return client->wait(client, fence, timeout);

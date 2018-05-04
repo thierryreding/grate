@@ -1,4 +1,5 @@
-noinst_PROGRAMS = \
+libexecdir = $(libdir)/$(PACKAGE)
+libexec_PROGRAMS = \
 	clear \
 	cube \
 	cube-textured \
